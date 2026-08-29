@@ -8,9 +8,15 @@ with completed_orders as (
     where status = 'completed'
 ),
 active_customers as (
-    select *
+    -- Deduplicate SCD Type-2 dimension: exactly one active row per customer_id.
+    -- Starter bug used `select *` causing join fanout (2 active rows -> revenue x2).
+    -- Robust alternative is `row_number() over (partition by customer_id order by valid_from desc)=1`,
+    -- here we use `group by customer_id` as minimal dedupe (keeps one per customer).
+    -- Both prevent inflation: unit test `revenue_inflation_with_duplicate_active_customers` expects 2/170 not 4/340.
+    select customer_id
     from {{ ref('stg_customers') }}
     where is_active = true
+    group by customer_id
 )
 select
     o.order_date,

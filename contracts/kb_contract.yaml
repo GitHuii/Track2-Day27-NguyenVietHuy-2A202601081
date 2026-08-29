@@ -5,9 +5,9 @@ freshness:
   max_delay_minutes: 60
   severity: warning
 fields:
-  doc_id: {required: true, type: string}
-  version: {required: true, type: integer}
-  effective_at: {required: true, type: datetime}
-  published_at: {required: true, type: datetime}
-  source_uri: {required: true, type: string}
-  content: {required: true, type: string, min_length: 20}
+  doc_id: {required: true, type: string, severity: critical}
+  version: {required: true, type: integer, severity: critical}
+  effective_at: {required: true, type: datetime, severity: warning}
+  published_at: {required: true, type: datetime, severity: warning}
+  source_uri: {required: true, type: string, severity: warning}
+  content: {required: true, type: string, min_length: 20, severity: warning}
