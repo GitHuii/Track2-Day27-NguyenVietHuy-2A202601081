@@ -6,15 +6,26 @@ import numpy as np
 
 
 def _psi(expected: np.ndarray, actual: np.ndarray, buckets: int = 10) -> float:
-    """Population Stability Index."""
-    # Use quantile buckets from expected
+    """Population Stability Index with small-sample adaptivity."""
     try:
-        quantiles = np.linspace(0, 100, buckets + 1)
+        n = len(expected)
+        eff_buckets = max(3, n // 2) if n < 10 else buckets
+        quantiles = np.linspace(0, 100, eff_buckets + 1)
         breaks = np.percentile(expected, quantiles)
-        # ensure unique breaks
         breaks = np.unique(breaks)
         if len(breaks) <= 2:
-            return 0.0
+            # Constant baseline: avoid jitter false positive via mean/range check
+            exp_mean = float(np.mean(expected))
+            act_mean = float(np.mean(actual))
+            ref_std = max(float(np.std(expected)), float(np.std(actual)), 1.0)
+            if abs(act_mean - exp_mean) < 0.5 * ref_std:
+                if float(np.min(actual)) >= float(np.min(expected)) - ref_std and float(np.max(actual)) <= float(np.max(expected)) + ref_std:
+                    return 0.0
+            lo = min(float(np.min(expected)), float(np.min(actual))) - 0.5
+            hi = max(float(np.max(expected)), float(np.max(actual))) + 0.5
+            if lo == hi:
+                return 0.0
+            breaks = np.linspace(lo, hi, min(eff_buckets, 5) + 1)
         expected_counts, _ = np.histogram(expected, bins=breaks)
         actual_counts, _ = np.histogram(actual, bins=breaks)
         expected_percs = expected_counts / len(expected)
@@ -88,20 +99,17 @@ def detect_distribution_shift(
     if base_median != 0 and cur_median != 0:
         median_ratio = max(abs(cur_median / base_median), abs(base_median / cur_median))
 
-    # Combine signals: require both distribution metrics or median ratio for moderate shifts
-    # Single metric false positives common with small samples, so we bias toward mean/median ratio
-    # PSI/KS only decisive when both indicate shift or mean already extreme
+    # Combine signals: median or PSI/KS (either) for shape drift, plus mean+distribution for borderline
     is_anom = bool(
         median_ratio >= ratio_threshold
-        or (psi > psi_threshold and ks > ks_threshold)
-        or mean_score >= ratio_threshold * 0.8 and (psi > psi_threshold or ks > ks_threshold)
+        or (psi >= psi_threshold or ks >= ks_threshold)
+        or mean_score >= ratio_threshold * 0.8 and (psi >= psi_threshold or ks >= ks_threshold)
     )
-    # Score is max of normalized metrics
     psi_norm = psi / psi_threshold if psi_threshold else 0
     ks_norm = ks / ks_threshold if ks_threshold else 0
     combined_score = max(mean_score, median_ratio, psi_norm, ks_norm)
 
-    method = "psi" if psi > psi_threshold else ("ks" if ks > ks_threshold else "mean_ratio")
+    method = "psi" if psi >= psi_threshold else ("ks" if ks >= ks_threshold else "mean_ratio")
     if is_anom:
         method = f"combined:{method}"
 
